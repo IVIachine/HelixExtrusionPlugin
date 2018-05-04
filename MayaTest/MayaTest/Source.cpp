@@ -6,7 +6,8 @@
 #include <maya/MDoubleArray.h>
 #include <maya/MFnNurbsCurve.h>
 #include <maya\MFnMesh.h>
-DeclareSimpleCommand(helix, "Autodesk - Example", "3.0");
+
+DeclareSimpleCommand(HelixExtrude, "Autodesk", "2017");
 
 MObject createCustomMesh(MStatus* errorStatus, MPoint prevPos, MPoint nextPos, double currentWidth,
 	MPoint &lastFaceOne, MPoint &lastFaceTwo, MPoint &lastFaceThree, MPoint &lastFaceFour)
@@ -25,6 +26,8 @@ MObject createCustomMesh(MStatus* errorStatus, MPoint prevPos, MPoint nextPos, d
 #pragma region setVertices
 
 	//set vertices based on direction vector of two helix samples
+
+	//find point at corner of box based on direction vectors
 	MFloatVector dirTemp;
 	dirTemp = dir + perpendicularDirHorizontal;
 	dirTemp.normalize();
@@ -32,6 +35,8 @@ MObject createCustomMesh(MStatus* errorStatus, MPoint prevPos, MPoint nextPos, d
 
 
 	vertices.append(dirTemp + center + perpendicularDirVertical * (distBetween));  // 0
+
+	//do the same for other vertices
 
 	dirTemp = dir + perpendicularDirHorizontal;
 	dirTemp.normalize();
@@ -91,8 +96,10 @@ MObject createCustomMesh(MStatus* errorStatus, MPoint prevPos, MPoint nextPos, d
 		vertices.append(lastFaceThree);
 		vertices.append(lastFaceFour);
 	}
+
 #pragma endregion
 
+	//set prev faces to be called in next customMesh call
 	lastFaceOne = vertices[1];
 	lastFaceTwo = vertices[0];
 	lastFaceThree = vertices[5];
@@ -152,14 +159,19 @@ MObject createCustomMesh(MStatus* errorStatus, MPoint prevPos, MPoint nextPos, d
 //CITE: https://stackoverflow.com/questions/42286385/how-to-create-a-polygon-in-maya-api-c
 void createSplineMesh(MStatus* errorStatus, const MFnNurbsCurve& curveRef, double widthStart, double widthDecrease)
 {
+	//mesh data
 	MFnMesh newMesh;
 	MPointArray vertices;
 	MIntArray polygonCounts;
 	MIntArray polygonConnects;
 	MPointArray verticesTemp;
+
+	//temp points
 	MPoint faceOne, faceTwo, faceThree, faceFour;
 	curveRef.getCVs(verticesTemp);
 	double width = widthStart;
+
+	//loop through each point on the curve, pass in current and next point
 	for (unsigned int i = 0; i < verticesTemp.length() - 1; i++)
 	{
 		createCustomMesh(errorStatus, verticesTemp[i], verticesTemp[i + 1], width, faceOne, faceTwo, faceThree, faceFour);
@@ -168,8 +180,10 @@ void createSplineMesh(MStatus* errorStatus, const MFnNurbsCurve& curveRef, doubl
 	}
 }
 
-MStatus helix::doIt(const MArgList& args)
+MStatus HelixExtrude::doIt(const MArgList& args)
 {
+	//cite helix generation: http://docs.autodesk.com/MAYAUL/2014/ENU/Maya-API-Documentation/index.html?url=files/GUID-A343C962-AEE1-4113-9DEC-1A88CF818AE9.htm,topicNumber=d30e7611
+	//default args
 	MStatus stat;
 	const unsigned	deg = 3;			// Curve Degree
 	const unsigned	ncvs = 20;			// Number of CVs
@@ -180,6 +194,7 @@ MStatus helix::doIt(const MArgList& args)
 	double startWidth = .5f;
 	double decreaseWidth = .025f;
 	unsigned i;
+
 	// Parse the arguments.
 	for (i = 0; i < args.length(); i++)
 	{
@@ -213,22 +228,25 @@ MStatus helix::doIt(const MArgList& args)
 
 	MPointArray controlVertices;
 	MDoubleArray knotSequences;
+
 	// Set up cvs and knots for the helix
-	//
 	for (i = 0; i < ncvs; i++)
 		controlVertices.append(MPoint(radius * cos((double)i),
 			pitch * (double)i, radius * sin((double)i)));
 	for (i = 0; i < nknots; i++)
 		knotSequences.append((double)i);
-	// Now create the curve
 
+	// Now create the curve
 	MFnNurbsCurve curveFn;
 	MObject curve = curveFn.create(controlVertices,
 		knotSequences, deg, MFnNurbsCurve::kOpen, false, false, MObject::kNullObj, &stat);
+
 	if (MS::kSuccess != stat)
 		cout << "Error creating curve.\n";
 
+	//take the curve and create a mesh from it
 	createSplineMesh(&stat, curveFn, startWidth, decreaseWidth);
+
 	if (MS::kSuccess != stat)
 		cout << "Error with custom extrude.\n";
 
