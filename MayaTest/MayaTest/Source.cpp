@@ -6,11 +6,12 @@
 #include <maya/MDoubleArray.h>
 #include <maya/MFnNurbsCurve.h>
 #include <maya\MFnMesh.h>
-DeclareSimpleCommand(doHelix, "Autodesk - Example", "2012");
+DeclareSimpleCommand(helix, "Autodesk - Example", "3.0");
 
-MObject createCustomMesh(MStatus* errorStatus, MPoint prevPos, MPoint nextPos)
+MObject createCustomMesh(MStatus* errorStatus, MPoint prevPos, MPoint nextPos, double currentWidth,
+	MPoint &lastFaceOne, MPoint &lastFaceTwo, MPoint &lastFaceThree, MPoint &lastFaceFour)
 {
-	float sqrtTwo = sqrt(2);
+	double sqrtTwo = sqrt(2);
 	MFnMesh newMesh;
 
 	MPointArray vertices;
@@ -19,56 +20,83 @@ MObject createCustomMesh(MStatus* errorStatus, MPoint prevPos, MPoint nextPos)
 	dir.normalize();
 	MFloatVector perpendicularDirHorizontal = MFloatVector(-dir.z, dir.y, dir.x);
 	MFloatVector perpendicularDirVertical = perpendicularDirHorizontal^dir;
-	float distBetween = prevPos.distanceTo(nextPos) / 2;
+	double distBetween = (prevPos.distanceTo(nextPos) / 2) * currentWidth;
 
+#pragma region setVertices
+
+	//set vertices based on direction vector of two helix samples
 	MFloatVector dirTemp;
 	dirTemp = dir + perpendicularDirHorizontal;
 	dirTemp.normalize();
 	dirTemp *= distBetween * sqrtTwo;
 
-	vertices.append(dirTemp + center + perpendicularDirVertical * (distBetween));    // 0
+
+	vertices.append(dirTemp + center + perpendicularDirVertical * (distBetween));  // 0
 
 	dirTemp = dir + perpendicularDirHorizontal;
 	dirTemp.normalize();
 	dirTemp *= distBetween * sqrtTwo;
 
-	vertices.append(dirTemp + center - perpendicularDirVertical * (distBetween));    // 1
+	vertices.append(dirTemp + center - perpendicularDirVertical * (distBetween));  // 1
 
-	dirTemp = -dir + perpendicularDirHorizontal;
-	dirTemp.normalize();
-	dirTemp *= distBetween * sqrtTwo;
+	if (lastFaceOne == MPoint())
+	{
+		dirTemp = -dir + perpendicularDirHorizontal;
+		dirTemp.normalize();
+		dirTemp *= distBetween * sqrtTwo;
 
-	vertices.append(dirTemp + center - perpendicularDirVertical * (distBetween));    // 2
+		vertices.append(dirTemp + center - perpendicularDirVertical * (distBetween));  // 2
 
-	dirTemp = -dir + perpendicularDirHorizontal;
-	dirTemp.normalize();
-	dirTemp *= distBetween * sqrtTwo;
+		dirTemp = -dir + perpendicularDirHorizontal;
+		dirTemp.normalize();
+		dirTemp *= distBetween * sqrtTwo;
 
-	vertices.append(dirTemp + center + perpendicularDirVertical * (distBetween));    // 3
+		vertices.append(dirTemp + center + perpendicularDirVertical * (distBetween));  // 3
+	}
+	else
+	{
+		vertices.append(lastFaceOne);
+		vertices.append(lastFaceTwo);
+	}
 
 	dirTemp = dir - perpendicularDirHorizontal;
 	dirTemp.normalize();
 	dirTemp *= distBetween * sqrtTwo;
 
-	vertices.append(dirTemp + center - perpendicularDirVertical * (distBetween));    // 4
+	vertices.append(dirTemp + center - perpendicularDirVertical * (distBetween));  // 4
 
 	dirTemp = dir - perpendicularDirHorizontal;
 	dirTemp.normalize();
 	dirTemp *= distBetween * sqrtTwo;
 
-	vertices.append(dirTemp + center + perpendicularDirVertical * (distBetween));    // 5
+	vertices.append(dirTemp + center + perpendicularDirVertical * (distBetween));  // 5
 
-	dirTemp = -dir - perpendicularDirHorizontal;
-	dirTemp.normalize();
-	dirTemp *= distBetween * sqrtTwo;
 
-	vertices.append(dirTemp + center + perpendicularDirVertical * (distBetween));    // 6
+	if (lastFaceOne == MPoint())
+	{
+		dirTemp = -dir - perpendicularDirHorizontal;
+		dirTemp.normalize();
+		dirTemp *= distBetween * sqrtTwo;
 
-	dirTemp = -dir - perpendicularDirHorizontal;
-	dirTemp.normalize();
-	dirTemp *= distBetween * sqrtTwo;
+		vertices.append(dirTemp + center + perpendicularDirVertical * (distBetween));  // 6
 
-	vertices.append(dirTemp + center - perpendicularDirVertical * (distBetween));    // 7
+		dirTemp = -dir - perpendicularDirHorizontal;
+		dirTemp.normalize();
+		dirTemp *= distBetween * sqrtTwo;
+
+		vertices.append(dirTemp + center - perpendicularDirVertical * (distBetween));  // 7
+	}
+	else
+	{
+		vertices.append(lastFaceThree);
+		vertices.append(lastFaceFour);
+	}
+#pragma endregion
+
+	lastFaceOne = vertices[1];
+	lastFaceTwo = vertices[0];
+	lastFaceThree = vertices[5];
+	lastFaceFour = vertices[4];
 
 	// Number of vertices per polygon
 	MIntArray polygonCounts;
@@ -80,11 +108,8 @@ MObject createCustomMesh(MStatus* errorStatus, MPoint prevPos, MPoint nextPos)
 	polygonCounts.append(4);
 
 	// How each group of N vertices per polygon is connected.
-	//
-	// Because for each vertex I have specified the list index number, I can use the
-	// same number to uniquely identify each face of the polygon to actually build
-	// the connection between each vertex.
 	MIntArray polygonConnects;
+
 	// First polygon
 	polygonConnects.append(0);
 	polygonConnects.append(1);
@@ -125,32 +150,67 @@ MObject createCustomMesh(MStatus* errorStatus, MPoint prevPos, MPoint nextPos)
 }
 
 //CITE: https://stackoverflow.com/questions/42286385/how-to-create-a-polygon-in-maya-api-c
-MObject createSplineMesh(MStatus* errorStatus, const MFnNurbsCurve& curveRef)
+void createSplineMesh(MStatus* errorStatus, const MFnNurbsCurve& curveRef, double widthStart, double widthDecrease)
 {
 	MFnMesh newMesh;
 	MPointArray vertices;
 	MIntArray polygonCounts;
 	MIntArray polygonConnects;
 	MPointArray verticesTemp;
+	MPoint faceOne, faceTwo, faceThree, faceFour;
 	curveRef.getCVs(verticesTemp);
-	for (size_t i = 0; i < verticesTemp.length() - 1; i++)
+	double width = widthStart;
+	for (unsigned int i = 0; i < verticesTemp.length() - 1; i++)
 	{
-		createCustomMesh(errorStatus, verticesTemp[i], verticesTemp[i+1]);
+		createCustomMesh(errorStatus, verticesTemp[i], verticesTemp[i + 1], width, faceOne, faceTwo, faceThree, faceFour);
+		width -= widthDecrease;
+		width = width < 0 ? 0 : width;
 	}
-
-	return newMesh.create(8, 6, vertices, polygonCounts, polygonConnects, &errorStatus);
 }
 
-MStatus doHelix::doIt(const MArgList&)
+MStatus helix::doIt(const MArgList& args)
 {
 	MStatus stat;
-	const unsigned deg = 3; // Curve Degree
-	const unsigned ncvs = 20; // Number of CVs
-	const unsigned spans = ncvs - deg; // Number of spans
-	const unsigned nknots = spans + 2 * deg - 1; // Number of knots
-	double radius = 4.0; // Helix radius
-	double pitch = 0.5; // Helix pitch
+	const unsigned	deg = 3;			// Curve Degree
+	const unsigned	ncvs = 20;			// Number of CVs
+	const unsigned	spans = ncvs - deg;	// Number of spans
+	const unsigned	nknots = spans + 2 * deg - 1;// Number of knots
+	double	radius = 4.0;			// Helix radius
+	double	pitch = 0.5;			// Helix pitch
+	double startWidth = .5f;
+	double decreaseWidth = .025f;
 	unsigned i;
+	// Parse the arguments.
+	for (i = 0; i < args.length(); i++)
+	{
+		if (MString("-p") == args.asString(i, &stat)
+			&& MS::kSuccess == stat)
+		{
+			double tmp = args.asDouble(++i, &stat);
+			if (MS::kSuccess == stat)
+				pitch = tmp;
+		}
+		else if (MString("-r") == args.asString(i, &stat)
+			&& MS::kSuccess == stat)
+		{
+			double tmp = args.asDouble(++i, &stat);
+			if (MS::kSuccess == stat)
+				radius = tmp;
+		}
+		else if (MString("-sw") == args.asString(i, &stat)
+			&& MS::kSuccess == stat)
+		{
+			double tmp = args.asDouble(++i, &stat);
+			startWidth = tmp;
+		}
+		else if (MString("-dw") == args.asString(i, &stat)
+			&& MS::kSuccess == stat)
+		{
+			double tmp = args.asDouble(++i, &stat);
+			decreaseWidth = tmp;
+		}
+	}
+
 	MPointArray controlVertices;
 	MDoubleArray knotSequences;
 	// Set up cvs and knots for the helix
@@ -161,16 +221,16 @@ MStatus doHelix::doIt(const MArgList&)
 	for (i = 0; i < nknots; i++)
 		knotSequences.append((double)i);
 	// Now create the curve
-	
+
 	MFnNurbsCurve curveFn;
-	MObject curve = curveFn.create(controlVertices, 
+	MObject curve = curveFn.create(controlVertices,
 		knotSequences, deg, MFnNurbsCurve::kOpen, false, false, MObject::kNullObj, &stat);
 	if (MS::kSuccess != stat)
 		cout << "Error creating curve.\n";
 
-	MObject newMesh = createSplineMesh(&stat, curveFn);
+	createSplineMesh(&stat, curveFn, startWidth, decreaseWidth);
 	if (MS::kSuccess != stat)
-		cout << "Error creating cube.\n";
+		cout << "Error with custom extrude.\n";
 
 	return stat;
 }
