@@ -17,7 +17,7 @@ MObject createCustomMesh(MStatus* errorStatus, MPoint prevPos, MPoint nextPos)
 	MFloatVector center = (nextPos + prevPos) / 2;
 	MFloatVector dir = (nextPos - prevPos);
 	dir.normalize();
-	MFloatVector perpendicularDirHorizontal = MFloatVector(dir.z, dir.y, dir.x);
+	MFloatVector perpendicularDirHorizontal = MFloatVector(-dir.z, dir.y, dir.x);
 	MFloatVector perpendicularDirVertical = perpendicularDirHorizontal^dir;
 	float distBetween = prevPos.distanceTo(nextPos) / 2;
 
